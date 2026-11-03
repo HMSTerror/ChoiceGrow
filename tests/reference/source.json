@@ -1,0 +1,13 @@
+{
+  "source": "C:\\Users\\14466\\.codex\\worktrees\\531a\\Choice",
+  "files": {
+    "data.py": "d21a6bbf2420f1d574d44f86ce98c834de3fedf1f86d66f9df9ffdb649d70269",
+    "diffusion.py": "e323652669710b0876f0732bf6b0359a222e943fc0b8ac1ad6c8a9e249dfb705",
+    "models.py": "d4cafae25968753f1042b880d60bb602c17ea6796d6443fa895c6c0fdd362778",
+    "neighbors.py": "80abac18801a7ae71e2d0d6b10b0db49c0dc382db6812c2c99fec933ea2735e9",
+    "scope.py": "b61984b3455a5184fe8190d4ae4ba24c1d84c7bc1d3f8680d540df3a5bb2fad0",
+    "train.py": "4ee2fcf0262ff640216938c022820bd5f0c8cfeb61d85036af53e502ac2e2aef",
+    "run.py": "98c7f4042525667d862117fb79813b31963fa4db4ce88091b98075713f3009d0",
+    "config.json": "49b7c3a2108bcfd599ff9ea90122524ac5753b715152944f284e2a3fe9886f18"
+  }
+}
