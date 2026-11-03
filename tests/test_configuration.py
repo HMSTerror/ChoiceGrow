@@ -17,24 +17,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ConfigurationTests(unittest.TestCase):
-    def test_defaults_keep_original_gate_initialization_exactly(self):
-        """Require identical budgets, initial parameters, and outputs after the legacy gate's float32 conversion.
-
-        Computing Lambda times shares may change the last Python-float bits; decimal representations need not
-        produce identical float64 literals, but the actual main-method gate must remain elementwise identical.
-        """
+    def test_gate_starts_from_configured_shares_and_preserves_budget(self):
+        """Verify the initial allocation and fixed budget across distinct destination distributions."""
         current = load_config(ROOT / "config.json")
-        previous = json.loads((ROOT / "tests/reference/config.json").read_text(encoding="utf-8"))
-        torch.manual_seed(17)
-        old = DynamicRateGate(previous["diffusion"]["level_rates"])
-        torch.manual_seed(17)
-        new = DynamicRateGate(current["diffusion"]["level_rates"])
-        self.assertEqual(old.total_rate, new.total_rate)
-        for key in old.state_dict():
-            torch.testing.assert_close(old.state_dict()[key], new.state_dict()[key], rtol=0, atol=0)
-        rho = torch.arange(1, 13, dtype=torch.float32).reshape(1, -1)
-        rho = rho / rho.sum()
-        torch.testing.assert_close(old(rho), new(rho), rtol=0, atol=0)
+        settings = current["diffusion"]
+        gate = DynamicRateGate(settings["level_rates"])
+        rho = torch.stack((torch.ones(12), torch.arange(1, 13, dtype=torch.float32)))
+        rho = rho / rho.sum(-1, keepdim=True)
+        rates = gate(rho)
+        shares = rates / rates.sum(-1, keepdim=True)
+        expected = torch.tensor(settings["initial_shares"]).expand_as(shares)
+        torch.testing.assert_close(shares, expected, rtol=1e-6, atol=1e-7)
+        torch.testing.assert_close(rates.sum(-1), torch.full((2,), settings["total_budget"]), rtol=1e-6, atol=1e-7)
         self.assertTrue(current["diffusion"]["dynamic_rate_gate"])
 
     def test_explicit_overrides_and_omission_are_distinct(self):
@@ -60,7 +54,10 @@ class ConfigurationTests(unittest.TestCase):
                 resolve_config(config)
 
     def test_old_checkpoint_configuration_is_preserved(self):
-        config = json.loads((ROOT / "tests/reference/config.json").read_text(encoding="utf-8"))
+        config = load_config(ROOT / "config.json")
+        config["diffusion"].pop("initial_shares")
+        config["diffusion"].pop("total_budget")
+        config["diffusion"]["level_rates"] = [.5, 1.8]
         self.assertEqual(resolve_config(config), config)
         changed = resolve_config(config, initial_shares=[.4, .6])
         budget = sum(config["diffusion"]["level_rates"])

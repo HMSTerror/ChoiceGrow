@@ -102,9 +102,9 @@ Use a new output directory for a new training run. An existing best checkpoint i
 | `models.py` | ChoiceGrow denoiser and bounded log-score ratios |
 | `diffusion.py` | Training objective and adaptive reverse sampling |
 | `train.py`, `evaluate.py`, `checkpoint.py` | Optimization, evaluation, and compatible checkpoint I/O |
-| `tests/` | Configuration, dataset, mathematical, and differential regression tests |
+| `tests/` | Configuration, dataset, and mathematical regression tests |
 
-`tests/reference/` is a frozen pre-refactor snapshot used only by differential tests. Local design notes under `docs/` are excluded from Git.
+Tests use the current implementation and independent mathematical checks; no pre-refactor source snapshot is bundled. Local design notes under `docs/` are excluded from Git.
 
 ## Outputs
 

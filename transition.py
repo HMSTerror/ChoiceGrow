@@ -1,7 +1,7 @@
 """User-conditioned generator Q_u and the paper's matrix assembly formula.
 
 Q_u = sum_l r_{u,l} (P_{u,l} - I) + reset_rate * (G - I)
-r_{u,l} = rate_scale * (1-alpha) * lambda_{u,l}; G[i,j] = base[j].
+r_{u,l} = (1-alpha) * lambda_{u,l}; G[i,j] = base[j].
 
 Public Q_u[i,j] denotes the rate from item i to j; every row sums to zero.
 rho_u defines within-block destinations, lambda defines level budgets, and G resets to shared background.
@@ -49,9 +49,8 @@ class RatePolicy(nn.Module, ABC):
         """Store initial budgets and effective scaling; UserGenerator handles the separate reset term alpha."""
         super().__init__()
         alpha = settings["reset_rate"]
-        scale = settings.get("rate_scale", 1.)
-        self.multiplier = scale * (1 - alpha)
-        self.initial_rates = tuple(scale * (1 - alpha) * value for value in settings["level_rates"])
+        self.multiplier = 1 - alpha
+        self.initial_rates = tuple(self.multiplier * value for value in settings["level_rates"])
 
     @abstractmethod
     def forward(self, rho):
@@ -144,7 +143,7 @@ class UserGenerator(nn.Module):
         if not self.level_count or len(settings["level_rates"]) != self.level_count:
             raise ValueError("Each partition level must have exactly one diffusion rate")
         self.item_count = destination.item_count
-        self.reset_rate = settings.get("rate_scale", 1.) * settings["reset_rate"]
+        self.reset_rate = settings["reset_rate"]
 
     @classmethod
     def from_artifact(cls, artifact, config):
