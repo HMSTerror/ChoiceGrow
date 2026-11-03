@@ -141,14 +141,12 @@ def read_interactions(path, source_format):
 
 
 def filter_core(frame, settings):
-    """Iteratively filter user/item interaction counts until both thresholds hold; retain duplicates by default.
+    """Iteratively filter user/item interaction counts until both thresholds hold, preserving repeated interactions.
 
-    Count interaction records. If deduplication is enabled, sort by time and keep the last user/item occurrence.
+    Count interaction records, including repeated interactions between the same user and item.
     Return filtered events and per-round sizes to explain changes in dataset size.
     """
     frame = frame.sort_values(["user", "timestamp", "position"], kind="stable")
-    if settings["deduplicate_user_item"]:
-        frame = frame.drop_duplicates(["user", "item"], keep="last")
     minimum_user = int(settings["min_user_interactions"])
     minimum_item = int(settings["min_item_interactions"])
     if minimum_user < 2 or minimum_item < 1:

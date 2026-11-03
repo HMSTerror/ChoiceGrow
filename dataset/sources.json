@@ -5,7 +5,6 @@
     "history_length": 10,
     "min_user_interactions": 5,
     "min_item_interactions": 5,
-    "deduplicate_user_item": false,
     "split_seed": 100,
     "train_fraction": 0.8,
     "validation_fraction": 0.1,

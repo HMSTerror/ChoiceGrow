@@ -42,7 +42,6 @@
     "learning_rate": 0.0006,
     "dropout": 0.1,
     "heads": 2,
-    "denoiser": "ChoiceGrow",
     "history_blocks": 1,
     "attention_head_scale": true,
     "score_temperature": 1.0,

@@ -41,7 +41,7 @@ Downloads use temporary `.partial` files, HTTP Range resumption where supported,
 ## Sample construction
 
 1. Extract user IDs, ASINs, and interaction times from the corresponding Amazon 2014 category's 5-core reviews.
-2. Sort chronologically with stable file-position tie breaking. Retain repeated interactions and apply no rating filter by default. Iteratively retain users and items with at least five interactions.
+2. Sort chronologically with stable file-position tie breaking. Preserve repeated user-item interactions and apply no rating filter. Iteratively retain users and items with at least five interactions.
 3. Sort ASINs lexicographically, assign IDs `0..N-1`, and save the mapping.
 4. Use each user's final interaction as the target and up to ten preceding interactions as history, producing one sample per user.
 5. Split users with fixed seed 100 into 80% training, 10% validation, and the remainder for testing. Save explicit user membership for every split.
