@@ -11,6 +11,7 @@ from artifacts import build_artifacts
 from train import Trainer
 from evaluate import Evaluator
 from configuration import load_config
+from training_state import TrainingStateStore
 
 
 ROOT = Path(__file__).resolve().parent
@@ -28,12 +29,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset",
                         choices=(*ALIASES, "Toys", "Sports", "Beauty", "Steam", "ML1M", "ATG", "ASO"))
-    parser.add_argument("--config", default="config.json")
+    parser.add_argument("--config", help="Configuration file; defaults to config.json, or the saved run with --resume")
     parser.add_argument("--output", help="Output directory; relative paths are resolved against the Grow directory")
     parser.add_argument("--stage", choices=("all", *STAGES), default="all")
     parser.add_argument("--device", help="auto/cpu/cuda:0; omit to use the configuration file")
     parser.add_argument("--seed", type=int)
     parser.add_argument("--epochs", type=int, help="Epoch limit; 0 uses validation early stopping only")
+    parser.add_argument("--patience", type=int, help="Override early-stopping patience in epochs")
+    parser.add_argument("--resume", action="store_true", help="Continue from OUTPUT/training_state.pt; requires --output")
     parser.add_argument("--initial-shares", type=float, nargs=2, metavar=("COMMUNITY", "ROOT"),
                         help="Override initial community/catalog shares; they must sum to 1; omit to use the configuration file")
     parser.add_argument("--learnable-rates", action=argparse.BooleanOptionalAction, default=None,
@@ -43,9 +46,13 @@ def main():
     parser.add_argument("--smoke", action=argparse.BooleanOptionalAction, default=None,
                         help="Run a one-epoch pipeline check on a small subset; omit to use the configuration file")
     args = parser.parse_args()
+    if args.resume and (not args.output or args.stage not in ("all", "train")):
+        parser.error("--resume requires --output and --stage train (or the default all)")
+    resume_output = local_path(args.output).resolve() if args.resume else None
+    source_config = args.config or (resume_output / "resolved_config.json" if args.resume else "config.json")
     # Apply only explicit overrides, so argparse's False cannot overwrite a configured True.
     try:
-        config = load_config(local_path(args.config), initial_shares=args.initial_shares,
+        config = load_config(local_path(source_config), initial_shares=args.initial_shares,
                              learnable_rates=args.learnable_rates)
     except ValueError as error:
         parser.error(str(error))
@@ -63,6 +70,8 @@ def main():
         config["seed"] = args.seed
     if args.epochs is not None:
         config["training"]["epochs"] = args.epochs
+    if args.patience is not None:
+        config["training"]["patience"] = args.patience
     if config["smoke"]:
         config["training"].update(epochs=1, batch_size=8, eval_batch_size=8, validation_interval=1,
                                   validation_streams=1, test_streams=1)
@@ -82,17 +91,21 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     config_path = output / "resolved_config.json"
     # Bind each output directory to one complete configuration to protect existing experiment results.
-    if config_path.exists() and json.loads(config_path.read_text(encoding="utf-8")) != config:
+    if args.resume:
+        # Validate the complete snapshot before replacing the effective settings.
+        TrainingStateStore(output).read(config)
+    elif config_path.exists() and json.loads(config_path.read_text(encoding="utf-8")) != config:
         raise ValueError("Output directory belongs to different settings; choose a new --output")
     write_json(config_path, config)
     # Dispatch each stage through a stable module interface; --stage supports separate execution.
     actions = {
         "prepare": lambda: prepare(local_path(config.get("data_root", "dataset")), output, config["dataset"], config),
         "artifacts": lambda: build_artifacts(output, config, device),
-        "train": lambda: Trainer(output, config, device).fit(),
+        "train": lambda: Trainer(output, config, device).fit(resume=args.resume),
         "evaluate": lambda: Evaluator(config, device).test_best(output),
     }
-    for stage in STAGES if args.stage == "all" else (args.stage,):
+    stages = (("train", "evaluate") if args.resume else STAGES) if args.stage == "all" else (args.stage,)
+    for stage in stages:
         print(f"[{stage}] dataset={config['dataset']} device={device} output={output}", flush=True)
         actions[stage]()
 

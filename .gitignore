@@ -8,6 +8,10 @@ docs/
 *.pt
 *.pth
 *.ckpt
+*.npz
+*.npy
 dataset/raw/
 dataset/generated/
 dataset/processed/
+comparisons/**/diagnostics/
+comparisons/**/partitions/

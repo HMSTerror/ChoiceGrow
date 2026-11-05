@@ -19,8 +19,9 @@ class CheckpointStore:
     """Save the EMA denoiser and current gate from the same epoch.
 
     Keep the original model/rate_gate keys instead of serializing the combined object's state_dict.
-    Module boundaries therefore do not change checkpoint keys. Optimizer state is not stored:
-    these weights support evaluation or initialization, but cannot exactly resume interrupted training.
+    Module boundaries therefore do not change checkpoint keys. These lightweight
+    evaluation weights omit optimizer state; training_state.TrainingStateStore
+    owns the separate complete snapshot used to resume training.
     """
 
     def __init__(self, output, config):

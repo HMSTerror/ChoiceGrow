@@ -1,6 +1,8 @@
 # ChoiceGrow
 
-The main method combines **history-neighbor weighting, native community/catalog nesting, and learned diffusion rates**. Source comments, docstrings, and CLI help are in English. Dataset sources and preprocessing are described in [dataset/README.md](dataset/README.md).
+The original configurable entry point combines **history-neighbor weighting, native community/catalog nesting, and learned diffusion rates**. The current frozen research protocol is provided by the [comparison suites](comparisons/README.md): full-sequence background `bn`, history-only neighbors `nn_clean`, and fixed Root or stratified community/catalog shares. Source comments, docstrings, and CLI help are in English. Dataset sources and preprocessing are described in [dataset/README.md](dataset/README.md).
+
+The frozen comparisons use `gamma=0.02`, `patience=300`, validation-selected EMA weights, and the original `eta=0` guided-score ranking. Their runners prepare the reviewed structural artifacts explicitly. The repository-root `config.json` retains the original learned-rate defaults; it does not select the frozen comparison protocol. The no-neighbor factor control explicitly uses `gamma=0`.
 
 ## Environment
 
@@ -88,6 +90,16 @@ python -m unittest discover -s tests -v
 
 Use a new output directory for a new training run. An existing best checkpoint is protected from accidental retraining.
 
+New training runs save a complete `training_state.pt` after every finished epoch. To continue a run, keep its output directory and use:
+
+```powershell
+./run.cmd --resume --output runs/my_run --epochs 2000 --patience 300
+```
+
+`--epochs 2000` means total epoch2000, rather than2000 additional epochs; `--epochs 0` keeps validation early stopping without a hard epoch limit. Resume reads the saved run's configuration by default and skips data/artifact preparation. Only the epoch limit and patience may change; model, rate policy, dataset, seed, batches, and other settings must match. Use the same device and numerical environment. The optimizer, live and EMA weights, gate, random generators, shuffle sequence, and validation-best/early-stop history are restored before the next epoch. Outputs left beyond the saved epoch are reconciled with the snapshot; old test reports and prediction caches move to `resume_history/` and are recomputed after training. Add `--stage train` to continue training without automatically testing afterward.
+
+Historical EMA-only checkpoints cannot supply missing optimizer or live-model state. Existing background processes continue using their already-loaded code; this feature applies to new main-method training and explicitly updated comparison jobs.
+
 ## Code map
 
 | File | Responsibility |
@@ -101,7 +113,7 @@ Use a new output directory for a new training run. An existing best checkpoint i
 | `kernel.py` | Exact forward probabilities using the closed nested-partition algebra |
 | `models.py` | ChoiceGrow denoiser and bounded log-score ratios |
 | `diffusion.py` | Training objective and adaptive reverse sampling |
-| `train.py`, `evaluate.py`, `checkpoint.py` | Optimization, evaluation, and compatible checkpoint I/O |
+| `train.py`, `evaluate.py`, `checkpoint.py`, `training_state.py` | Optimization, evaluation weights, and complete training snapshots/resume |
 | `tests/` | Configuration, dataset, and mathematical regression tests |
 
 Tests use the current implementation and independent mathematical checks; no pre-refactor source snapshot is bundled. Local design notes under `docs/` are excluded from Git.
@@ -118,5 +130,7 @@ Each experiment writes to its directory under `runs/`:
 | `recommendations.npz` | Recommendation cache for later analyses, including long-tail evaluation |
 | `resolved_config.json` | Effective configuration and derived `level_rates` |
 | `choice_best.pt`, `choice_newst.pt` | Best and latest saved weights |
+| `training_state.pt` | Latest complete epoch: live/EMA weights, AdamW, learned gate/process, RNGs, shuffle and selection history |
+| `resume_history/` | Previous reports and any log tail superseded by an explicit resume |
 
-Checkpoints do not contain optimizer state and are not complete training-resume snapshots. Sampling streams evaluate the same trained checkpoint; they are not independent training runs.
+`choice_best.pt` and `choice_newst.pt` remain lightweight EMA evaluation checkpoints. Resume uses `training_state.pt`, written through a temporary file so an interrupted write retains the preceding complete snapshot. Sampling streams evaluate the same trained checkpoint; they are not independent training runs.

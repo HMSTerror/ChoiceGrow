@@ -12,6 +12,7 @@ This module assembles rates; kernel.py computes transition probabilities exp(sig
 Represent the catalog matrix implicitly, materializing only requested incoming rates and small algebra coefficients.
 """
 # Note: docs/decisions/implemented/architecture/2026-11-03-paper-modules.md
+# Note: docs/decisions/implemented/feature/2026-11-04-fixed-shares.md
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import math
@@ -62,6 +63,29 @@ class FixedRates(RatePolicy):
     def forward(self, rho):
         """Return the original scalar tuple; rho is accepted only to share the policy interface."""
         return self.initial_rates
+
+
+class FixedShares(FixedRates):
+    """Use explicit constant shares of Lambda, with no gate or trainable parameters.
+
+    fixed_shares are ordered like the partition levels. A single [1] is Root;
+    [s_C, 1-s_C] is community/catalog. Zero shares are valid structural controls.
+    Validation and early stopping do not depend on this policy implementation.
+    """
+    def __init__(self, settings):
+        shares = settings["fixed_shares"]
+        if not isinstance(shares, (list, tuple)) or not shares:
+            raise ValueError("fixed_shares must be a nonempty list of level shares")
+        shares = tuple(float(value) for value in shares)
+        if any(not math.isfinite(value) or value < 0 or value > 1 for value in shares):
+            raise ValueError("fixed_shares must be finite and between zero and one")
+        if not math.isclose(sum(shares), 1., rel_tol=0., abs_tol=1e-9):
+            raise ValueError("fixed_shares must sum to 1; values are not silently normalized")
+        budget = float(settings["total_budget"])
+        if not math.isfinite(budget) or budget <= 0:
+            raise ValueError("total_budget must be finite and positive")
+        self.shares, self.total_budget = shares, budget
+        super().__init__({**settings, "level_rates": [budget * share for share in shares]})
 
 
 class DynamicRateGate(nn.Module):
@@ -140,7 +164,7 @@ class UserGenerator(nn.Module):
         self.partition = partition
         self.rate_policy = rate_policy
         self.level_count = partition.level_count
-        if not self.level_count or len(settings["level_rates"]) != self.level_count:
+        if not self.level_count or len(rate_policy.initial_rates) != self.level_count:
             raise ValueError("Each partition level must have exactly one diffusion rate")
         self.item_count = destination.item_count
         self.reset_rate = settings["reset_rate"]
@@ -149,8 +173,13 @@ class UserGenerator(nn.Module):
     def from_artifact(cls, artifact, config):
         """Construct from structure.pt; select the rate-policy implementation only at this boundary."""
         settings = config["diffusion"]
-        policy = (LearnedRates(settings, config["seed"]) if settings.get("dynamic_rate_gate", False)
-                  else FixedRates(settings))
+        if "fixed_shares" in settings:
+            if settings.get("dynamic_rate_gate", False):
+                raise ValueError("fixed_shares requires dynamic_rate_gate=false")
+            policy = FixedShares(settings)
+        else:
+            policy = (LearnedRates(settings, config["seed"]) if settings.get("dynamic_rate_gate", False)
+                      else FixedRates(settings))
         return cls(NeighborDestination(artifact, config["destination"]),
                    NestedPartition(artifact["blocks"]), policy, settings)
 

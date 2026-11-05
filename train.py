@@ -16,6 +16,7 @@ from checkpoint import CheckpointStore, make_denoiser
 from data import loader, load_split, write_json
 from diffusion import ChoiceDiffusion
 from evaluate import Evaluator
+from training_state import TrainingStateStore
 
 
 def seed_all(seed):
@@ -100,17 +101,29 @@ class Trainer:
             examples += len(target)
         return total / examples
 
-    def fit(self):
-        """Run until validation early stopping or the epoch limit, saving best/newst weights and a summary.
+    def fit(self, resume=False):
+        """Train or continue from the last complete epoch, preserving early-stop history.
 
         patience measures elapsed epochs, not validation calls; validation uses fixed random streams.
-        Checkpoints omit optimizer state; this entry point starts fresh training rather than resuming it.
+        Evaluation weights remain separate from the complete training_state.pt snapshot.
         """
         settings = self.settings
-        if self.checkpoints.best_path.exists():
-            raise FileExistsError(f"Diffusion checkpoint already exists: {self.checkpoints.best_path}; choose a new output")
-        best, best_epoch, best_seconds, started = None, 0, 0., time.perf_counter()
-        for epoch in training_epochs(settings["epochs"]):
+        store = TrainingStateStore(self.output)
+        if resume:
+            state = store.read(self.config)
+            store.restore(self, state)
+            store.restore_outputs(self, state)
+            best, best_epoch = state["best_validation"], state["best_epoch"]
+            best_seconds, elapsed = state["selected_checkpoint_seconds"], state["elapsed_seconds"]
+            start_epoch = state["epoch"] + 1
+        else:
+            if any((self.output / name).exists() for name in
+                   ("choice_best.pt", "choice_newst.pt", "choice_log.jsonl", "training_state.pt")):
+                raise FileExistsError(f"Training artifacts already exist in {self.output}; use --resume or a new output")
+            best, best_epoch, best_seconds, elapsed, start_epoch = None, 0, 0., 0., 1
+        started = time.perf_counter()
+        epochs = count(start_epoch) if settings["epochs"] == 0 else range(start_epoch, settings["epochs"] + 1)
+        for epoch in epochs:
             mean_loss = self.train_epoch()
             metrics, shares = None, None
             if epoch % settings["validation_interval"] == 0 or epoch == settings["epochs"]:
@@ -120,18 +133,21 @@ class Trainer:
                 shares = self.evaluator.rate_statistics(self.process, self.validation)
                 if better(metrics, best):
                     best, best_epoch = metrics, epoch
-                    best_seconds = time.perf_counter() - started
+                    best_seconds = elapsed + time.perf_counter() - started
                     self.checkpoints.save("choice_best.pt", self.ema.model, self.process, epoch, metrics, self.ema.updates)
             self.checkpoints.save("choice_newst.pt", self.ema.model, self.process, epoch, metrics, self.ema.updates)
             # Retain the legacy newst filename and overwrite it each epoch instead of accumulating large checkpoints.
             append_log(self.output / "choice_log.jsonl", {"stage": "choice", "epoch": epoch,
                 "score_entropy": mean_loss, "validation": metrics, "best_epoch": best_epoch, "rate_shares": shares})
+            store.save(self, epoch, best, best_epoch, best_seconds, elapsed + time.perf_counter() - started)
             if metrics is not None and epoch - best_epoch >= settings["patience"]:
                 break
         report = {"epochs_completed": epoch, "best_epoch": best_epoch, "best_validation": best,
             "selection_split": "val", "objective": "score_entropy", "epoch_limit": settings["epochs"] or None,
             "stop_reason": "early_stopping" if epoch - best_epoch >= settings["patience"] else "epoch_limit",
-            "selected_checkpoint_seconds": best_seconds, "elapsed_seconds": time.perf_counter() - started,
-            "dynamic_rate_gate": self.process.generator.rate_policy.is_learned, "gate_ema": False}
+            "selected_checkpoint_seconds": best_seconds, "elapsed_seconds": elapsed + time.perf_counter() - started,
+            "dynamic_rate_gate": self.process.generator.rate_policy.is_learned, "gate_ema": False,
+            "resumed_from_epoch": start_epoch - 1 if resume else None,
+            "full_training_state": "training_state.pt", "full_state_interval": 1}
         write_json(self.output / "training.json", report)
         return report
