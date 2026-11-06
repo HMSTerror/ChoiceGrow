@@ -1,0 +1,10 @@
+{
+  "automation_id": "toys-root",
+  "name": "Toys Root 三种子补跑收尾",
+  "interval_minutes": 20,
+  "status": "deleted_after_verified_completion",
+  "completed_at": "2026-11-04T17:25:49.039281+08:00",
+  "final_verification": "runs/final_verification.json",
+  "notify": "completion, failure, required action, or meaningful change; quiet otherwise",
+  "execution": "local persistent run_suite.py; heartbeat verifies and reports completion"
+}
